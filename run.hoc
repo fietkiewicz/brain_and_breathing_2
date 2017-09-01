@@ -1,0 +1,27 @@
+/* Use run.hoc to start simulation. Creates a raster plot similar to Figure 2C in "Variability in respiratory rhythm generation: in vitro and in silico models", C Fietkiewicz, GO Shafer, EA Platt, CG Wilson, Communications in Nonlinear Science and Numerical Simulation, Volume 32, March 2016, Pages 158–168 (doi: 10.1016/j.cnsns.2015.08.018).
+NOTE: To get more bursts, increase the simulation time.
+Author contact: chris.fietkiewicz@case.edu
+Author website: http://filer.case.edu/cxf47
+*/
+
+strdef suffix
+simulationTime = 2000 // Total simulation time in msec
+suffix = "test" // Output file suffix (if outputMode is set to 1)
+outputMode = 1.00000000 // (0 = file, 1 = plot)
+seed = 2.00000000 // Seed for random number generators (except T cell start time)
+tonicToPMweight = 0.00025000 // Mean synaptic weight from T cells to PM cells
+tonicToPMprob = 0.40000000 // Connection probability from T cells to PM cells
+PMtoPMweight = 0.00003000 // Mean synaptic weight from PM cells to PM cells
+PMtoPMprob = 0.57000000 // Connection probability from PM cells to PM cells
+tonicNoise = 1.00000000 // Noise level for T cells
+tonicToPMrange = 0.10000000 // Multiplier that sets min/max synaptic weight from T cells to PM cells [min = tonicToPMweight*(1-tonicToPMrange), max = tonicToPMweight*(1+tonicToPMrange]
+PMtoPMrange = 0.000010 // Variance for normally distributed synaptic weight from PM cells to PM cells
+tonicSeed = 1.00000000 // Seed for random number generators for T cell start time
+numTonic = 100.00000000 // Quantity of T cells
+numPM = 100.00000000 // Quantity of PM cells
+tonicPeriodMean = 700 // Mean spike rate for T cells
+setEK = -85.00000000 // K+ reversal potential
+setEleak = -73.00000000 // Leak reversal potential
+load_file("initialize.hoc")
+initialize(simulationTime, suffix, outputMode, seed, tonicToPMweight, tonicToPMprob, PMtoPMweight, PMtoPMprob, tonicNoise, tonicToPMrange, PMtoPMrange, tonicSeed, tonicPeriodrange, numTonic, numPM, tonicPeriodMean, setEK, setEleak)
+load_file("main.hoc")

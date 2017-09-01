@@ -1,0 +1,28 @@
+/* Use run.hoc to start simulation. Creates a raster plot similar to Figure 2C in "Variability in respiratory rhythm generation: in vitro and in silico models", C Fietkiewicz, GO Shafer, EA Platt, CG Wilson, Communications in Nonlinear Science and Numerical Simulation, Volume 32, March 2016, Pages 158–168 (doi: 10.1016/j.cnsns.2015.08.018).
+NOTE: To get more bursts, increase the simulation time.
+Author contact: chris.fietkiewicz@case.edu
+Author website: http://filer.case.edu/cxf47
+*/
+
+//Initializes the parameters necessary for main.hoc to run 
+proc initialize() {
+	strdef fileSuffix
+	setStop = $1
+	fileSuffix = $s2
+	outputMode = $3
+	seed = $4
+	tonicToPMweight = $5
+	tonicToPMprob = $6
+	PMtoPMweight = $7
+	PMtoPMprob = $8
+	tonicNoise = $9
+	tonicToPMrange = $10
+	PMtoPMrange = $11
+	tonicSeed = $12
+	tonicPeriodrange = $13
+	numTonic = $14
+	numPM = $15
+	tonicPeriodMean = $16
+	setEK = $17
+	setEleak = $18
+}

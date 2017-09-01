@@ -1,0 +1,113 @@
+/* Use run.hoc to start simulation. Creates a raster plot similar to Figure 2C in "Variability in respiratory rhythm generation: in vitro and in silico models", C Fietkiewicz, GO Shafer, EA Platt, CG Wilson, Communications in Nonlinear Science and Numerical Simulation, Volume 32, March 2016, Pages 158–168 (doi: 10.1016/j.cnsns.2015.08.018).
+NOTE: To get more bursts, increase the simulation time.
+Author contact: chris.fietkiewicz@case.edu
+Author website: http://filer.case.edu/cxf47
+*/
+
+//******************************Pacemaker Template***************************
+begintemplate PM
+public is_art
+public init, topol, basic_shape, subsets, geom, biophys, geom_nseg, biophys_inhomo
+public synlist, x, y, z, position, connect2target
+
+public soma
+public all
+
+objref synlist
+
+proc init() {
+  topol()
+  subsets()
+  geom()
+  biophys()
+  geom_nseg()
+  synlist = new List()
+  synapses()
+  x = y = z = 0 // only change via position
+}
+
+create soma
+
+proc topol() { local i
+  basic_shape()
+}
+proc basic_shape() {
+  soma {pt3dclear() pt3dadd(0, 0, 0, 1) pt3dadd(15, 0, 0, 1)}
+}
+
+objref all
+proc subsets() { local i
+  objref all
+  all = new SectionList()
+    soma all.append()
+
+}
+proc geom() {
+  forsec all {  /*area = 3000 */ L = diam = 30.9019  }
+  soma {  /*area = 3000 */ L = diam = 30.9019  }
+}
+//external lambda_f
+proc geom_nseg() {
+//  forsec all { nseg = int((L/(0.1*lambda_f(100))+.9)/2)*2 + 1  }
+}
+proc biophys() {
+  soma {
+    Ra = 100
+	cm = 0.7
+    insert na
+      gmax_na = 0.0013333
+    insert nap
+      gmax_nap = 0.00002907
+    insert k
+      gmax_k = 0.000533333
+    insert leak
+      gmax_leak = 0.00003091
+  }
+}
+proc biophys_inhomo(){}
+proc position() { local i
+  soma for i = 0, n3d()-1 {
+    pt3dchange(i, $1-x+x3d(i), $2-y+y3d(i), $3-z+z3d(i), diam3d(i))
+  }
+  x = $1  y = $2  z = $3
+}
+obfunc connect2target() { localobj nc //$o1 target point process, optional $o2 returned NetCon
+  soma nc = new NetCon(&v(1), $o1)
+  nc.threshold = 0
+  if (numarg() == 2) { $o2 = nc } // for backward compatibility
+  return nc
+}
+objref syn_
+proc synapses() {
+  /* Itonic0 */   soma syn_ = new ExpSyn(0.5)  synlist.append(syn_)
+    syn_.tau = 5
+  /* Isyn1 */   soma syn_ = new ExpSyn(0.5)  synlist.append(syn_)
+    syn_.tau = 5
+}
+func is_art() { return 0 }
+
+endtemplate PM
+
+//***********************TONIC CELL TEMPLATE***************************
+
+begintemplate NoisyTonicECells_NetStim
+public pp, connect2target, x, y, z, position, is_art
+objref pp
+
+proc init() {
+	pp = new NetStim()
+    pp.number = 1e+09
+    pp.start = $1
+    pp.noise = $2
+	pp.seed($3)
+	pp.interval = $4
+	
+}
+func is_art() { return 1 }
+obfunc connect2target() { localobj nc
+  nc = new NetCon(pp, $o1)
+  if (numarg() == 2) { $o2 = nc }
+  return nc
+}
+proc position(){x=$1  y=$2  z=$3}
+endtemplate NoisyTonicECells_NetStim

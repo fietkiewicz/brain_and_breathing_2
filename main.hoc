@@ -1,0 +1,295 @@
+/* Use run.hoc to start simulation. Creates a raster plot similar to Figure 2C in "Variability in respiratory rhythm generation: in vitro and in silico models", C Fietkiewicz, GO Shafer, EA Platt, CG Wilson, Communications in Nonlinear Science and Numerical Simulation, Volume 32, March 2016, Pages 158–168 (doi: 10.1016/j.cnsns.2015.08.018).
+NOTE: To get more bursts, increase the simulation time.
+Author contact: chris.fietkiewicz@case.edu
+Author website: http://filer.case.edu/cxf47
+*/
+
+/*
+Parameter descriptions:
+
+"seed" is a seed for random number generators.
+
+tonicToPMweight: Synaptic weight from tonic to PM cells.
+tonicToPMprob: Probability of any tonic cell to be connected to a PM cell.
+PMtoPMweight: Synaptic weight between PM cells.
+PMtoPMprob: Probability of any 2 PM cells to be connected.
+tonicNoise: Controls the "randomness" of the tonic spiking. 0 = none. 1 = 100%
+tonicPeriodMean: Tonic cell interspike interval.
+
+Comments: The connection weights and probabilities compliment each other. If you 
+increase the weight to a PM cell, the input to the cell will increase and the cell
+will brust faster. However the input will decrease if you also decrease the 
+probability because there will be fewer connections from other cells.
+*/
+
+if (setStop < 0) { // For negative sim time...
+	setStop = tonicPeriodMean * 1000 // ...estimate sim time necessary for 100 bursts
+}
+
+// Other parameters
+recordMode = 0 // 0 = Spike times, 1 = Input currents under v-clamp, 2 = Membrane voltages under i-clamp
+recordTonic = 0 // Include(1)/exclude(0) tonic cells in spike raster
+printParams = 0
+weightSeed = seed
+connectSeed = seed
+cellSeed = seed
+
+load_file("cellTemplates.hoc")
+
+//***************************Network specification interface****************
+
+objref nclist, netcon
+objref pmcells, tonicecells
+objref ranlist, cells
+
+cells = new List()
+nclist = new List()
+tonicecells = new List()
+pmcells= new List()
+
+func tonicecell_append() {
+	cells.append($o1)
+    tonicecells.append($o1) 
+	return tonicecells.count - 1
+}
+
+func pmcell_append() {
+	cells.append($o1)
+    pmcells.append($o1) 
+	return pmcells.count - 1
+}
+
+//************************NEW CELLS*********************************
+objref randomDelay
+randomDelay = new Random(tonicSeed)
+randomDelay.uniform(0, tonicPeriodMean)
+
+proc createTonicE() {
+    tonicecells.remove_all()
+    for i=0, $1-1 {
+		tonicPeriod = tonicPeriodMean
+		tonicDelay = randomDelay.repick()
+		tonicecell_append(new NoisyTonicECells_NetStim(tonicDelay, tonicNoise, tonicSeed, tonicPeriod)) 
+	}	
+}
+proc createPM() {
+	pmcells.remove_all()
+    for i=0, $1-1 {
+		pmcell_append(new PM())
+	}     
+}
+//***********************************CONNECTIONS***************************
+objref randomConnection, randomWeight, leakRecord, napRecord  // Random number generator and lists of random values
+randomWeight = new Random(weightSeed)
+randomConnection = new Random(connectSeed)
+randomConnection.uniform(0, 1)
+leakRecord = new Vector(numPM)
+napRecord = new Vector(numPM)
+
+proc wireTonic() { 
+	for i = 0, tonicecells.count()-1 {
+		for j = 0, pmcells.count()-1 {
+			randomWeight.uniform(tonicToPMweight*(1-tonicToPMrange), tonicToPMweight*(1+tonicToPMrange))
+			r = randomConnection.repick()
+			w = randomWeight.repick()
+			if (r < tonicToPMprob) {
+				netcon = new NetCon (tonicecells.object(i).pp, pmcells.object(j).synlist.object(0), -10, 0, w)
+				nclist.append(netcon)
+			}
+		}
+	}
+}
+
+// Choose random PMtoPMweight (mean value)
+variance = PMtoPMrange * PMtoPMrange
+randomWeight.normal(PMtoPMweight, variance) // PMtoPMweight is initially the mean of randomly selected weights
+PMtoPMweight = randomWeight.repick()  // PMtoPMweight becomes the actual weight as in previous schemes
+print "PMtoPMweight = "
+print PMtoPMweight
+	
+// Actual PM wiring
+proc wirePM() {
+	for i = 0, pmcells.count()-1 {
+		for j = 0, pmcells.count()-1 {
+			randomWeight.uniform(PMtoPMweight*(1-0.4), PMtoPMweight*(1+0.4))
+			r = randomConnection.repick()
+			w = randomWeight.repick()
+			if (r < PMtoPMprob && i != j) {
+				netcon = pmcells.object(i).connect2target(pmcells.object(j).synlist.object(0))
+				netcon.threshold = 0
+				netcon.delay = 0
+				netcon.weight = w   
+				nclist.append(netcon)
+			}
+		}
+	}
+}
+
+
+//***********************ADDING HETEROGENIETY*******************************
+objref randomCells // Random number generator for cell heterogeneity
+randomCells = new Random(cellSeed)
+
+proc randomizeCells () { 
+	for i = 0, pmcells.count()-1 {
+		// Set gmax_leak
+		gLimitFactor = 0.40 // Factor for computing hard limit (+/-)
+		gMean = 0.00005
+		randomCells.uniform(gMean - gMean * gLimitFactor, gMean + gMean * gLimitFactor) // Set distribution
+		r = randomCells.repick() // Pick value
+		PM[i].soma gmax_leak = r
+		leakRecord.x[i] = r
+		// Set gmax_nap
+		gLimitFactor = 0.15 // Factor for computing hard limit (+/-)
+		gMean = 0.00009
+		randomCells.uniform(gMean - gMean * gLimitFactor, gMean + gMean * gLimitFactor) // Set distribution
+		r = randomCells.repick() // Pick value
+		PM[i].soma gmax_nap = r
+		napRecord.x[i] = r
+	}
+}
+
+//***************** Changing Extracellular K ****************
+proc setPotentials() {
+	E_NA = 50
+	E_K = $1
+	E_LEAK = $2
+    for i = 0, pmcells.count()-1 {
+		PM[i].soma.e_na = E_NA
+		PM[i].soma.e_nap = E_NA
+		PM[i].soma.e_k = E_K
+		PM[i].soma.e_leak = E_LEAK
+     }
+}
+
+//********************** RECORD *********************
+objref netcon, nil
+objref spikeTimeVec, spikeIdVec, currentVec[100], vclamp[100], voltageVec[100]
+spikeTimeVec = new Vector()
+spikeIdVec = new Vector()
+nRecord = 0 // Total number of cells. Used for raster plot.
+vclampQty = 5 // Quantity of cells for vclamp recording
+iclampQty = 5 // Quantity of cells for vclamp recording
+
+proc prepareRecording() {
+	if (recordMode == 0) {
+		if (recordTonic == 1) {
+			// Record tonic E cells
+			for i=0, tonicecells.count - 1 {
+				netcon = new NetCon(tonicecells.object(i).pp, nil, 0, 1, 0)    
+				netcon.record(spikeTimeVec, spikeIdVec, nRecord+i+1)
+			}
+			nRecord = nRecord + tonicecells.count
+		}
+		// Record PM cells
+		for i=0, pmcells.count()-1 {
+			pmcells.object(i).soma netcon = new NetCon(&v(0.5), nil, 0, 1, 0)    
+			netcon.record(spikeTimeVec, spikeIdVec, nRecord+i+1)
+		}
+		nRecord = nRecord + pmcells.count()
+	}
+	if (recordMode == 1) {
+		for i=0, vclampQty-1 {
+			// Create v-clamps
+			pmcells.object(i).soma vclamp[i] = new SEClamp(0.5)
+			vclamp[i].dur1 = setStop
+			vclamp[i].rs = 0.01
+			vclamp[i].amp1 = -71
+
+			// Set up recordings
+			currentVec[i] = new Vector()
+			currentVec[i].record(&vclamp[i].i)
+		}
+	}
+	if (recordMode == 2) {
+		for i=0, iclampQty-1 {
+			// Set up recordings
+			voltageVec[i] = new Vector()
+			voltageVec[i].record(&PM[i].soma.v(0.5))
+		}
+	}
+}
+
+//****************File Output*************
+objref f, state
+objref graster
+
+proc writeFiles() {  
+	if (recordMode == 0) {
+		// Save i-clamp spike times
+		f = new File()
+		strdef filename
+		sprint(filename, "spikeTime_%s.txt", $s1)
+		f.wopen(filename)
+		spikeTimeVec.printf(f)
+		f.close()
+
+		// Save i-clamp spike IDs
+		f = new File()
+		sprint(filename, "spikeID_%s.txt", $s1)
+		f.wopen(filename)
+		spikeIdVec.printf(f)
+		f.close()
+	}
+	if (recordMode == 1) {
+		strdef fileName
+		f = new File()
+		for i=0, vclampQty-1 {
+			sprint(fileName, "in%d_%s.bin", i + 1, $s1)
+			f.wopen(fileName)
+			currentVec[i].vwrite(f, 3)
+			f.close()
+		}
+	}
+	if (recordMode == 2) {
+		strdef fileName
+		f = new File()
+		for i=0, iclampQty-1 {
+			sprint(fileName, "out%d_%s.bin", i + 1, $s1)
+			f.wopen(fileName)
+			voltageVec[i].vwrite(f, 3)
+			f.close()
+		}
+	}
+}
+
+proc writeParams() {
+	if (printParams == 1) {
+		f = new File()
+		sprint(filename, "params_%s.txt", $s1)
+		f.wopen(filename)
+		leakRecord.printf(f)
+		napRecord.printf(f)
+		f.close()
+	}
+}
+
+//*************************INITIALIZATION************************
+objref f, state
+
+proc init() {
+	celsius = 27
+	prepareRecording()
+	finitialize(-70)
+}
+
+//**************** Setup and Run ****************
+createTonicE(numTonic)
+createPM(numPM)
+randomizeCells()
+setPotentials(setEK, setEleak)
+wireTonic()
+wirePM()
+writeParams(fileSuffix)
+init()
+batch_run(setStop, 0.1)
+
+//**************** Output ****************
+if (outputMode == 0) {
+	writeFiles(fileSuffix)
+		quit()
+} else { // Raster plot
+	graster = new Graph(0)
+	graster.view(0 ,0 , setStop, nRecord, 0, 0, 900, 600)
+	spikeIdVec.mark(graster, spikeTimeVec, "|", 6)
+}
